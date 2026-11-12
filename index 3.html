@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>레슬링 챔피언 - 다이나믹 배틀 에디션</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        [x-cloak] { display: none !important; }
+
+        /* 타격 시 흔들리는 애니메이션 효과 */
+        @keyframes punch-left {
+            0% { transform: translateX(0); }
+            30% { transform: translateX(40px) scale(1.05); }
+            60% { transform: translateX(-10px); }
+            100% { transform: translateX(0); }
+        }
+        @keyframes punch-right {
+            0% { transform: translateX(0); }
+            30% { transform: translateX(-40px) scale(1.05); }
+            60% { transform: translateX(10px); }
+            100% { transform: translateX(0); }
+        }
+        @keyframes hit-shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-15px) rotate(-3deg); }
+            40% { transform: translateX(15px) rotate(3deg); }
+            60% { transform: translateX(-10px); }
+            80% { transform: translateX(10px); }
+        }
+
+        .anim-punch-player { animation: punch-left 0.3s ease-in-out; }
+        .anim-punch-ai { animation: punch-right 0.3s ease-in-out; }
+        .anim-hit { animation: hit-shake 0.4s ease-in-out; }
+    </style>
+</head>
+<body class="bg-neutral-950 text-neutral-100 min-h-screen flex flex-col selection:bg-red-600 selection:text-white" x-data="wrestlingGame()">
+
+    <!-- 상단 헤더 -->
+    <header class="bg-neutral-900/90 backdrop-blur-md border-b border-neutral-800 sticky top-0 z-50 shadow-lg">
+        <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3 cursor-pointer" @click="gameState = 'menu'">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-red-600 to-neutral-800 flex items-center justify-center shadow-lg shadow-red-600/30 text-xl font-bold border border-red-500/40">
+                    🤼
+                </div>
+                <div>
+                    <h1 class="font-black text-lg tracking-wider text-white uppercase italic">WRESTLING <span class="text-red-600">CHAMPION</span></h1>
+                    <p class="text-xs text-neutral-400">다이나믹 타격 아레나</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3 text-xs font-semibold">
+                <span class="bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded-xl">스테이지: <strong class="text-white" x-text="`${currentStage}단계 (${currentAi.name})`"></strong></span>
+                <span class="bg-red-950 border border-red-800 text-red-300 px-3 py-1.5 rounded-xl">명예 점수: <strong class="text-red-400" x-text="`${score} 점`"></strong></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="flex-grow max-w-4xl mx-auto px-4 py-8 w-full flex flex-col justify-center">
+
+        <!-- [화면 1] 메인 메뉴 -->
+        <div x-show="gameState === 'menu'" x-cloak class="space-y-6 text-center max-w-xl mx-auto bg-neutral-900/90 border border-neutral-800 p-8 rounded-3xl shadow-2xl backdrop-blur-sm">
+            <div class="space-y-3">
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest bg-red-600/20 text-red-500 border border-red-500/30">
+                    Dynamic Battle Simulator
+                </span>
+                <h2 class="text-3xl md:text-4xl font-black text-white italic tracking-tight">피 터지는 링 위의 사투</h2>
+                <p class="text-neutral-400 text-sm leading-relaxed">
+                    실시간 타격 모션과 피격 시 상처 입은 모습으로 몰입감 넘치는 레슬링 매치를 즐겨보세요! 패배 시 퀴즈 특훈으로 부활할 수 있습니다.
+                </p>
+            </div>
+            <button @click="startMatch" class="w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-2xl text-base shadow-lg shadow-red-600/40 transition transform hover:-translate-y-0.5 tracking-wider uppercase italic">
+                🔥 링 위로 입장하기
+            </button>
+        </div>
+
+        <!-- [화면 2] 레슬링 경기 아레나 (AI 대전 & 캐릭터 비주얼 연출) -->
+        <div x-show="gameState === 'match'" x-cloak class="space-y-6 bg-neutral-900/90 border border-neutral-800 p-6 md:p-8 rounded-3xl shadow-2xl backdrop-blur-sm">
+            
+            <!-- 경기 정보 -->
+            <div class="flex justify-between items-center border-b border-neutral-800 pb-3">
+                <div>
+                    <span class="text-xs font-bold text-red-500 uppercase tracking-widest" x-text="`Stage ${currentStage} - Match`"></span>
+                    <h3 class="text-2xl font-black text-white italic" x-text="`VS ${currentAi.name} (${currentAi.style})`"></h3>
+                </div>
+                <span class="text-2xl animate-pulse text-red-500">⚡ FIGHT</span>
+            </div>
+
+            <!-- 체력바 -->
+            <div class="grid grid-cols-2 gap-6 bg-neutral-950/80 p-4 rounded-2xl border border-neutral-800">
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs font-bold text-neutral-300">
+                        <span>플레이어 (나)</span>
+                        <span class="text-white font-mono" x-text="`${playerHp}%`"></span>
+                    </div>
+                    <div class="w-full bg-neutral-800 h-2.5 rounded-full overflow-hidden border border-neutral-700">
+                        <div class="bg-white h-full transition-all duration-300" :style="`width: ${playerHp}%`"></div>
+                    </div>
+                </div>
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs font-bold text-neutral-300">
+                        <span x-text="currentAi.name"></span>
+                        <span class="text-red-500 font-mono" x-text="`${aiHp}%`"></span>
+                    </div>
+                    <div class="w-full bg-neutral-800 h-2.5 rounded-full overflow-hidden border border-neutral-700">
+                        <div class="bg-red-600 h-full transition-all duration-300" :style="`width: ${aiHp}%`"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 🤼 캐릭터 시각적 전투 링 연출 (펀치 모션 및 다친 모습 적용) -->
+            <div class="bg-neutral-950 border border-neutral-800 rounded-2xl p-6 flex items-center justify-around relative overflow-hidden h-52 shadow-inner">
+                <!-- 링 바닥 효과 -->
+                <div class="absolute inset-0 bg-[radial-gradient(#262626_1px,transparent_1px)] [background-size:16px_16px] opacity-40"></div>
+
+                <!-- 플레이어 캐릭터 -->
+                <div class="flex flex-col items-center z-10 transition-transform duration-200" 
+                     :class="{'anim-punch-player': playerAttacking, 'anim-hit': playerHit}">
+                    <div class="w-24 h-24 rounded-3xl bg-neutral-900 border-2 border-neutral-700 flex flex-col items-center justify-center shadow-2xl relative">
+                        <span class="text-4xl" x-text="playerAvatar"></span>
+                        <span class="absolute -bottom-2 px-2 py-0.5 rounded-full text-[10px] font-black bg-white text-neutral-950">YOU</span>
+                    </div>
+                    <span class="text-xs font-bold text-neutral-300 mt-2">도전자</span>
+                </div>
+
+                <!-- VS 뱃지 -->
+                <div class="z-10 font-black italic text-red-600 text-xl tracking-tighter bg-black/60 px-3 py-1.5 rounded-xl border border-neutral-800">
+                    VS
+                </div>
+
+                <!-- AI 캐릭터 -->
+                <div class="flex flex-col items-center z-10 transition-transform duration-200" 
+                     :class="{'anim-punch-ai': aiAttacking, 'anim-hit': aiHit}">
+                    <div class="w-24 h-24 rounded-3xl bg-neutral-900 border-2 border-red-900/80 flex flex-col items-center justify-center shadow-2xl relative">
+                        <span class="text-4xl" x-text="aiAvatar"></span>
+                        <span class="absolute -bottom-2 px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white" x-text="currentAi.name"></span>
+                    </div>
+                    <span class="text-xs font-bold text-red-400 mt-2">상대 파이터</span>
+                </div>
+            </div>
+
+            <!-- 실시간 경기 로그 -->
+            <div class="bg-black text-red-400 p-3.5 rounded-2xl font-mono text-xs h-24 overflow-y-auto space-y-1 border border-neutral-800 shadow-inner">
+                <template x-for="log in battleLogs" :key="log">
+                    <p x-text="log"></p>
+                </template>
+            </div>
+
+            <!-- 기술 선택 버튼 -->
+            <div class="grid grid-cols-3 gap-3 pt-1">
+                <button @click="playerAction('attack')" :disabled="isAiTurn" class="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs md:text-sm transition shadow-md">
+                    👊 태클 / 타격
+                </button>
+                <button @click="playerAction('grapple')" :disabled="isAiTurn" class="bg-red-700 hover:bg-red-800 border border-red-600 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl text-xs md:text-sm transition shadow-md">
+                    🤼 그라운드 테이크다운
+                </button>
+                <button @click="playerAction('defend')" :disabled="isAiTurn" class="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 disabled:opacity-50 text-neutral-200 font-bold py-3.5 rounded-xl text-xs md:text-sm transition shadow-md">
+                    🛡️ 방어 및 카운터
+                </button>
+            </div>
+        </div>
+
+        <!-- [화면 3] 지식 단련실 (퀴즈 특훈) -->
+        <div x-show="gameState === 'training'" x-cloak class="space-y-6 bg-neutral-900/90 border border-red-900/50 p-6 md:p-8 rounded-3xl shadow-2xl backdrop-blur-sm max-w-xl mx-auto text-center">
+            <div class="space-y-2">
+                <div class="text-4xl">💪</div>
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest bg-red-950 text-red-400 border border-red-800">
+                    지식 단련실 (특훈 중)
+                </span>
+                <h3 class="text-2xl font-black text-white italic">매트에 쓰러졌습니다!</h3>
+                <p class="text-neutral-400 text-sm">
+                    체력이 다해 패배했습니다. 레슬링 지식 퀴즈를 풀며 특훈을 완료해 링으로 부활하세요! (<strong class="text-red-500 font-mono" x-text="`${trainingScore} / 3 정답 필요`"></strong>)
+                </p>
+            </div>
+
+            <div class="bg-neutral-950 border border-neutral-800 p-5 rounded-2xl space-y-4 text-left shadow-inner">
+                <h4 class="font-bold text-white text-sm md:text-base" x-text="currentQuiz.question"></h4>
+                <div class="space-y-2">
+                    <template x-for="(opt, idx) in currentQuiz.options" :key="idx">
+                        <button @click="answerTrainingQuiz(idx)" class="w-full text-left p-3 rounded-xl text-xs md:text-sm font-medium bg-neutral-900 border border-neutral-800 hover:bg-red-950 hover:border-red-800 transition shadow-sm text-neutral-200" x-text="opt"></button>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- [화면 4] 경기 승리 화면 -->
+        <div x-show="gameState === 'victory'" x-cloak class="space-y-6 bg-neutral-900/90 border border-neutral-800 p-8 rounded-3xl shadow-2xl backdrop-blur-sm max-w-xl mx-auto text-center">
+            <div class="space-y-3">
+                <div class="text-5xl">🏆</div>
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest bg-red-600/20 text-red-500 border border-red-500/30">
+                    VICTORY
+                </span>
+                <h3 class="text-3xl font-black text-white italic" x-text="`${currentAi.name} 선수를 제압했습니다!`"></h3>
+                <p class="text-neutral-400 text-sm">
+                    완벽한 승리입니다! 다음 단계의 강력한 고수와 맞붙을 준비를 하세요.
+                </p>
+            </div>
+            <button @click="nextStage" class="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3.5 rounded-2xl text-sm shadow-lg transition uppercase italic tracking-wider">
+                다음 상대로 진입하기 ➡️
+            </button>
+        </div>
+
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="bg-neutral-950 border-t border-neutral-900 py-6 text-center text-xs text-neutral-500 mt-12 shadow-inner">
+        <p>&copy; 2026 레슬링 챔피언 시뮬레이터. 다이나믹 애니메이션 에디션.</p>
+    </footer>
+
+    <!-- 게임 로직 스크립트 -->
+    <script>
+        function wrestlingGame() {
+            return {
+                gameState: 'menu',
+                currentStage: 1,
+                score: 100,
+                playerHp: 100,
+                aiHp: 100,
+                isAiTurn: false,
+                battleLogs: [],
+
+                // 애니메이션 및 피격 상태 제어 변수
+                playerAttacking: false,
+                playerHit: false,
+                aiAttacking: false,
+                aiHit: false,
+
+                aiOpponents: [
+                    { name: '철강왕 브록', style: '파워 파이터', hp: 100 },
+                    { name: '테크닉의 제왕 세바스찬', style: '그라운드 서브미션', hp: 120 },
+                    { name: '번개 태클러 랜디', style: '스피드 레슬링', hp: 140 },
+                    { name: '전설의 챔피언 헐크', style: '올라운드 몬스터', hp: 160 }
+                ],
+
+                get currentAi() {
+                    let index = (this.currentStage - 1) % this.aiOpponents.length;
+                    return this.aiOpponents[index];
+                },
+
+                // 체력 상태에 따라 다친 모습(이모지) 동적 변경
+                get playerAvatar() {
+                    if (this.playerHp > 70) return '🧑‍🦱';
+                    if (this.playerHp > 35) return '🤕';
+                    return '😵‍💫';
+                },
+
+                get aiAvatar() {
+                    if (this.aiHp > 70) return '🦹';
+                    if (this.aiHp > 35) return '🧛‍♂️';
+                    return '💀';
+                },
+
+                trainingScore: 0,
+                currentQuiz: { question: '', options: [], answer: 0 },
+                quizzes: [
+                    { question: '그레코로만형(Greco-Roman) 레슬링에서 허리 아래(다리)를 공격하는 기술은 허용될까요?', options: ['1. 허용된다', '2. 엄격히 금지된다', '3. 메치기할 때만 허용된다', '4. 심판 재량이다'], answer: 1 },
+                    { question: '올림픽 자유형(Freestyle) 레슬링에서 상대를 매트에 완전히 눕히고 핀(Fall) 상태로 만드는 승리 조건을 무엇이라 할까요?', options: ['1. 폴 (Fall)', '2. 서브미션', '3. 테크니컬 수퍼리어리티', '4. 패시브'], answer: 0 },
+                    { question: '상대의 두 다리를 잡고 앞으로 넘어뜨리는 가장 대표적인 레슬링 태클 기술은?', options: ['1. 암록 (Armlock)', '2. 더블 레그 테클 (Double Leg Takedown)', '3. 초크슬램', '4. 수플렉스'], answer: 1 },
+                    { question: '상대의 허리를 감싸 뒤로 크게 젖히며 메치는 화려한 레슬링 기술의 이름은?', options: ['1. 수플렉스 (Suplex)', '2. 백드롭', '3. 하이킥', '4. 암바'], answer: 0 }
+                ],
+
+                startMatch() {
+                    this.playerHp = 100;
+                    this.aiHp = this.currentAi.hp;
+                    this.battleLogs = [`[경기 시작] ${this.currentAi.name} 선수가 매트에 입장했습니다!`];
+                    this.gameState = 'match';
+                },
+
+                playerAction(type) {
+                    if (this.isAiTurn) return;
+
+                    let pDmg = 0;
+                    let msg = '';
+
+                    // 플레이어 공격 애니메이션 실행
+                    this.playerAttacking = true;
+                    setTimeout(() => { this.playerAttacking = false; }, 300);
+
+                    // AI 피격 애니메이션 실행
+                    setTimeout(() => {
+                        this.aiHit = true;
+                        setTimeout(() => { this.aiHit = false; }, 400);
+                    }, 150);
+
+                    if (type === 'attack') {
+                        pDmg = Math.floor(Math.random() * 15) + 15;
+                        msg = `[내 공격] 강력한 태클과 타격 성공! (${pDmg} 데미지)`;
+                    } else if (type === 'grapple') {
+                        pDmg = Math.floor(Math.random() * 20) + 10;
+                        msg = `[내 기술] 화려한 그라운드 테이크다운 성공! (${pDmg} 데미지)`;
+                    } else if (type === 'defend') {
+                        pDmg = Math.floor(Math.random() * 8) + 5;
+                        msg = `[방어 및 카운터] 상대의 공격을 흘려내고 반격! (${pDmg} 데미지)`;
+                    }
+
+                    this.aiHp = Math.max(0, this.aiHp - pDmg);
+                    this.battleLogs.unshift(msg);
+
+                    if (this.aiHp <= 0) {
+                        this.score += 50;
+                        this.gameState = 'victory';
+                        return;
+                    }
+
+                    // AI 반격 턴
+                    this.isAiTurn = true;
+                    setTimeout(() => {
+                        // AI 공격 애니메이션 실행
+                        this.aiAttacking = true;
+                        setTimeout(() => { this.aiAttacking = false; }, 300);
+
+                        // 플레이어 피격 애니메이션 실행
+                        setTimeout(() => {
+                            this.playerHit = true;
+                            setTimeout(() => { this.playerHit = false; }, 400);
+                        }, 150);
+
+                        let aDmg = Math.floor(Math.random() * 18) + 10;
+                        this.playerHp = Math.max(0, this.playerHp - aDmg);
+                        this.battleLogs.unshift(`[${this.currentAi.name} 반격] 상대로부터 강력한 압박! (${aDmg} 데미지)`);
+
+                        if (this.playerHp <= 0) {
+                            this.initTraining();
+                            this.gameState = 'training';
+                        }
+                        this.isAiTurn = false;
+                    }, 1000);
+                },
+
+                initTraining() {
+                    this.trainingScore = 0;
+                    this.nextQuizItem();
+                },
+
+                nextQuizItem() {
+                    let rand = Math.floor(Math.random() * this.quizzes.length);
+                    this.currentQuiz = this.quizzes[rand];
+                },
+
+                answerTrainingQuiz(idx) {
+                    if (idx === this.currentQuiz.answer) {
+                        this.trainingScore++;
+                        alert('정답입니다! 단련 게이지가 상승합니다.');
+                        if (this.trainingScore >= 3) {
+                            alert('특훈 완료! 체력을 회복하고 재경기 기회를 얻었습니다!');
+                            this.playerHp = 80;
+                            this.aiHp = Math.min(this.currentAi.hp, this.aiHp + 20);
+                            this.gameState = 'match';
+                        } else {
+                            this.nextQuizItem();
+                        }
+                    } else {
+                        alert('틀렸습니다! 다시 올바른 레슬링 지식을 선택하세요.');
+                        this.nextQuizItem();
+                    }
+                },
+
+                nextStage() {
+                    this.currentStage++;
+                    this.startMatch();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
